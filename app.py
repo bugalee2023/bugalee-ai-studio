@@ -78,7 +78,7 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
                     float(duration),
                     42,
                     "conv",
-                    True,
+                    False,
                     True,
                     False,
                     api_name="/run"
