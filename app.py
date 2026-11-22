@@ -2,6 +2,7 @@ import streamlit as st
 import tempfile
 import os
 import subprocess
+import math
 import imageio_ffmpeg
 from gradio_client import Client, handle_file
 
@@ -11,92 +12,173 @@ st.set_page_config(
     layout="wide"
 )
 
+@st.cache_resource
+def get_client():
+    return Client("Lightricks/LTX-2.5")
+
 st.title("🎬 BUGALEE AI STUDIO")
 st.subheader("Your Personal AI Movie Production Studio")
-
-st.write("Turn your imagination into cinematic movies.")
+st.write("Create cinematic movies with your imagination.")
 
 st.divider()
 
-st.header("🎥 Create Your Movie")
+st.header("🎥 CREATE YOUR MOVIE")
 
 story = st.text_area(
     "Enter Your Movie Story",
     height=180,
-    placeholder="Describe your movie story here..."
+    placeholder="Write your movie story here..."
 )
 
 characters = st.file_uploader(
-    "Upload Your Main Character Picture",
+    "Upload Your Character Picture",
     type=["png", "jpg", "jpeg"]
 )
 
-st.subheader("⚙️ Movie Settings")
+st.divider()
+
+st.header("🎨 MOVIE STYLE")
+
+movie_style = st.selectbox(
+    "Choose Movie Style",
+    [
+        "Nollywood",
+        "Hollywood",
+        "Cartoon / Animation",
+        "Anime",
+        "Realistic Cinematic"
+    ]
+)
+
+genre = st.selectbox(
+    "Choose Movie Genre",
+    [
+        "Action",
+        "Comedy",
+        "Romance",
+        "Drama",
+        "Crime / Thriller",
+        "Horror",
+        "Ancient Kingdom",
+        "School Life",
+        "Adventure",
+        "Family"
+    ]
+)
+
+st.divider()
+
+st.header("⚙️ VIDEO SETTINGS")
 
 duration = st.selectbox(
-    "Choose Your Movie Duration",
-    [4, 6, 10, 30],
-    index=0,
+    "Choose Movie Duration",
+    [10, 15, 20, 25, 30],
     format_func=lambda x: f"{x} seconds"
 )
 
 video_format = st.selectbox(
-    "Video Format",
-    ["YouTube Landscape", "Portrait"]
+    "Choose Video Size",
+    [
+        "16:9 - YouTube Landscape",
+        "9:16 - TikTok / Shorts",
+        "1:1 - Square",
+        "4:5 - Portrait",
+        "21:9 - Cinematic Wide",
+        "4:3 - Classic Television"
+    ]
 )
 
-if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
+sizes = {
+    "16:9 - YouTube Landscape": (832, 1472),
+    "9:16 - TikTok / Shorts": (1472, 832),
+    "1:1 - Square": (1024, 1024),
+    "4:5 - Portrait": (1152, 896),
+    "21:9 - Cinematic Wide": (640, 1536),
+    "4:3 - Classic Television": (832, 1152)
+}
+
+st.divider()
+
+st.caption(
+    "Longer videos require multiple generations. "
+    "Availability depends on the video generator's GPU limits."
+)
+
+if st.button(
+    "🎬 GENERATE MY MOVIE",
+    use_container_width=True
+):
 
     if not story.strip():
         st.error("Please enter your movie story.")
 
     else:
-        image_path = None
 
         try:
+
             with tempfile.TemporaryDirectory() as temp_dir:
 
+                image_path = None
+
                 if characters:
+
                     image_path = os.path.join(
                         temp_dir,
-                        characters.name
+                        "character.png"
                     )
 
                     with open(image_path, "wb") as f:
                         f.write(characters.getvalue())
 
-                if video_format == "YouTube Landscape":
-                    height, width = 832, 1472
-                else:
-                    height, width = 1472, 832
+                height, width = sizes[video_format]
 
-                clip_duration = 2
-                total_clips = duration // clip_duration
+                clip_duration = 2.0
+
+                total_clips = math.ceil(
+                    duration / clip_duration
+                )
+
+                actual_clip_duration = (
+                    duration / total_clips
+                )
 
                 st.info(
-                    f"Your {duration}-second movie will be "
-                    f"created using {total_clips} short clips."
+                    f"Your {duration}-second project "
+                    f"requires {total_clips} video clips."
                 )
 
                 progress = st.progress(0)
 
                 clip_paths = []
 
-                client = Client("Lightricks/LTX-2.5")
+                client = get_client()
 
                 for i in range(total_clips):
 
                     prompt = f"""
-                    Create a realistic cinematic Nollywood movie scene.
+                    Create a cinematic movie scene.
 
-                    Complete story:
+                    MOVIE STYLE: {movie_style}
+
+                    MOVIE GENRE: {genre}
+
+                    COMPLETE MOVIE STORY:
                     {story}
 
-                    This is scene {i + 1} of {total_clips}.
-                    Continue the same story and show the next moment.
-                    Maintain the same character appearance and clothing.
-                    Natural lighting, realistic movements,
-                    professional movie cinematography.
+                    SCENE NUMBER: {i + 1} of {total_clips}
+
+                    Show the next moment in the story.
+                    Maintain the same main character appearance,
+                    face, clothing and identity.
+
+                    Make the scene visually engaging.
+                    Use realistic movements and professional
+                    cinematography.
+
+                    For action scenes, use cinematic action
+                    without graphic injuries or gore.
+
+                    No subtitles, no captions, no watermarks.
                     """
 
                     with st.spinner(
@@ -109,7 +191,7 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
                             if image_path else None,
                             height,
                             width,
-                            float(clip_duration),
+                            float(actual_clip_duration),
                             42,
                             "conv",
                             False,
@@ -122,12 +204,12 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
 
                     if not isinstance(video_file, str):
                         raise Exception(
-                            "The video generator returned an unexpected result."
+                            "Unexpected video result."
                         )
 
                     if not os.path.exists(video_file):
                         raise Exception(
-                            "The generated video file could not be found."
+                            "Generated video file not found."
                         )
 
                     clip_path = os.path.join(
@@ -151,9 +233,14 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
                 )
 
                 with open(concat_file, "w") as f:
+
                     for clip in clip_paths:
+
                         safe_path = clip.replace("\\", "/")
-                        f.write(f"file '{safe_path}'\n")
+
+                        f.write(
+                            f"file '{safe_path}'\n"
+                        )
 
                 output_video = os.path.join(
                     temp_dir,
@@ -162,7 +249,9 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
 
                 ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
-                with st.spinner("Joining all scenes into one movie..."):
+                with st.spinner(
+                    "Joining all scenes into one movie..."
+                ):
 
                     subprocess.run(
                         [
@@ -183,21 +272,26 @@ if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
                         text=True
                     )
 
-                st.success("Your movie is ready!")
-
-                st.video(output_video)
-
                 with open(output_video, "rb") as f:
-                    st.download_button(
-                        "⬇️ DOWNLOAD MY MOVIE",
-                        data=f,
-                        file_name="BUGALEE_MOVIE.mp4",
-                        mime="video/mp4",
-                        use_container_width=True
-                    )
+                    final_video = f.read()
+
+            st.success("🎉 YOUR MOVIE IS READY!")
+
+            st.video(final_video)
+
+            st.download_button(
+                "⬇️ DOWNLOAD MY MOVIE",
+                data=final_video,
+                file_name="BUGALEE_MOVIE.mp4",
+                mime="video/mp4",
+                use_container_width=True
+            )
 
         except Exception as e:
-            st.error(f"Movie generation failed: {e}")
+
+            st.error(
+                f"Movie generation failed: {e}"
+            )
 
 st.divider()
 
