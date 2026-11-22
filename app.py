@@ -1,5 +1,4 @@
 import streamlit as st
-from PIL import Image
 
 st.set_page_config(
     page_title="BUGALEE AI STUDIO",
@@ -17,19 +16,12 @@ h1 {
     color: #F5C542;
     text-align: center;
 }
-.subtitle {
-    text-align: center;
-    color: #cccccc;
-}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🎬 BUGALEE AI STUDIO")
-
-st.markdown(
-    '<p class="subtitle">Your Personal AI Movie Production Studio</p>',
-    unsafe_allow_html=True
-)
+st.markdown("### Your Personal AI Movie Production Studio")
+st.write("Turn your imagination into cinematic movies.")
 
 st.divider()
 
@@ -44,7 +36,7 @@ story = st.text_area(
 st.subheader("👥 Upload Your Characters")
 
 characters = st.file_uploader(
-    "Upload character reference pictures",
+    "Upload character pictures",
     type=["png", "jpg", "jpeg"],
     accept_multiple_files=True
 )
@@ -60,4 +52,66 @@ st.divider()
 st.subheader("⚙️ Movie Settings")
 
 duration = st.selectbox(
-   
+    "Choose Movie Duration",
+    [
+        "20 Seconds",
+        "30 Seconds",
+        "1 Minute",
+        "5 Minutes",
+        "10 Minutes",
+        "20 Minutes",
+        "30 Minutes",
+        "1 Hour",
+        "2 Hours"
+    ]
+)
+
+video_format = st.selectbox(
+    "Choose Video Format",
+    [
+        "YouTube Landscape (16:9)",
+        "YouTube Shorts (9:16)",
+        "Square (1:1)"
+    ]
+)
+
+language = st.selectbox(
+    "Movie Language",
+    ["English", "Nigerian Pidgin", "French", "Spanish"]
+)
+
+style = st.selectbox(
+    "Movie Style",
+    [
+        "Realistic Nollywood Movie",
+        "Hollywood Cinematic",
+        "African Traditional Movie",
+        "School Drama",
+        "Romance",
+        "Comedy",
+        "Action"
+    ]
+)
+
+st.divider()
+
+if st.button("🎬 GENERATE MY MOVIE", use_container_width=True):
+    if not story.strip():
+        st.error("Please enter your movie story first.")
+    else:
+        st.success("Your movie project is ready for the next stage!")
+
+        st.write("Duration:", duration)
+        st.write("Video Format:", video_format)
+        st.write("Language:", language)
+        st.write("Movie Style:", style)
+        st.write("Characters uploaded:", len(characters or []))
+
+        st.info(
+            "The video-generation engine has not been connected yet. "
+            "This is the first working interface of BUGALEE AI STUDIO."
+        )
+
+st.divider()
+
+st.caption("© BUGALEE TV | BUGALEE AI STUDIO")
