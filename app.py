@@ -1,10 +1,7 @@
 import streamlit as st
-import tempfile
-import os
-import subprocess
-import math
-import imageio_ffmpeg
-from gradio_client import Client, handle_file
+import requests
+import time
+import base64
 
 st.set_page_config(
     page_title="BUGALEE AI STUDIO",
@@ -12,287 +9,186 @@ st.set_page_config(
     layout="wide"
 )
 
-@st.cache_resource
-def get_client():
-    return Client("Lightricks/LTX-2.5")
+API = "https://apihub.agnes-ai.com"
 
 st.title("🎬 BUGALEE AI STUDIO")
-st.subheader("Your Personal AI Movie Production Studio")
-st.write("Create cinematic movies with your imagination.")
+st.subheader("Your Personal AI Movie Studio")
 
-st.divider()
+st.write("Create cinematic movies from your imagination.")
 
-st.header("🎥 CREATE YOUR MOVIE")
-
-story = st.text_area(
-    "Enter Your Movie Story",
-    height=180,
-    placeholder="Write your movie story here..."
-)
-
-characters = st.file_uploader(
-    "Upload Your Character Picture",
-    type=["png", "jpg", "jpeg"]
-)
-
-st.divider()
-
-st.header("🎨 MOVIE STYLE")
-
-movie_style = st.selectbox(
-    "Choose Movie Style",
-    [
-        "Nollywood",
-        "Hollywood",
-        "Cartoon / Animation",
-        "Anime",
-        "Realistic Cinematic"
-    ]
+style = st.selectbox(
+    "Movie Style",
+    ["Nollywood", "Hollywood", "Realistic Cinematic",
+     "Cartoon / Animation", "Anime"]
 )
 
 genre = st.selectbox(
-    "Choose Movie Genre",
-    [
-        "Action",
-        "Comedy",
-        "Romance",
-        "Drama",
-        "Crime / Thriller",
-        "Horror",
-        "Ancient Kingdom",
-        "School Life",
-        "Adventure",
-        "Family"
-    ]
+    "Movie Genre",
+    ["Drama", "Action", "Comedy", "Romance",
+     "Crime / Thriller", "Horror", "Ancient Kingdom",
+     "School Life", "Adventure", "Family"]
 )
-
-st.divider()
-
-st.header("⚙️ VIDEO SETTINGS")
 
 duration = st.selectbox(
-    "Choose Movie Duration",
-    [10, 15, 20, 25, 30],
-    format_func=lambda x: f"{x} seconds"
+    "Video Duration",
+    [4, 5, 6, 8, 10, 12]
 )
 
-video_format = st.selectbox(
-    "Choose Video Size",
-    [
-        "16:9 - YouTube Landscape",
-        "9:16 - TikTok / Shorts",
-        "1:1 - Square",
-        "4:5 - Portrait",
-        "21:9 - Cinematic Wide",
-        "4:3 - Classic Television"
-    ]
+ratio = st.selectbox(
+    "Video Format",
+    ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]
 )
 
-sizes = {
-    "16:9 - YouTube Landscape": (832, 1472),
-    "9:16 - TikTok / Shorts": (1472, 832),
-    "1:1 - Square": (1024, 1024),
-    "4:5 - Portrait": (1152, 896),
-    "21:9 - Cinematic Wide": (640, 1536),
-    "4:3 - Classic Television": (832, 1152)
-}
-
-st.divider()
-
-st.caption(
-    "Longer videos require multiple generations. "
-    "Availability depends on the video generator's GPU limits."
+story = st.text_area(
+    "Describe Your Movie Scene",
+    height=150
 )
 
-if st.button(
-    "🎬 GENERATE MY MOVIE",
-    use_container_width=True
-):
+image_file = st.file_uploader(
+    "Upload Character Reference Image (Optional)",
+    type=["png", "jpg", "jpeg"]
+)
+
+st.caption("Video generation produces individual short clips.")
+
+if st.button("🎥 GENERATE MY MOVIE", use_container_width=True):
 
     if not story.strip():
-        st.error("Please enter your movie story.")
+        st.warning("Please enter your movie scene.")
+
+    elif "AGNES_API_KEY" not in st.secrets:
+        st.error("Agnes API key has not been connected yet.")
 
     else:
+        headers = {
+            "Authorization": f"Bearer {st.secrets['AGNES_API_KEY']}",
+            "Content-Type": "application/json"
+        }
+
+        prompt = f"""
+        Create a professional cinematic {style} movie scene.
+        Genre: {genre}.
+        Scene: {story}
+
+        Realistic human movement, expressive faces,
+        detailed environment, professional camera movement,
+        cinematic lighting and consistent appearance.
+        No subtitles, captions or watermarks.
+        """
+
+        payload = {
+            "model": "agnes-video-2.5-flash",
+            "prompt": prompt,
+            "mode": "text",
+            "seconds": str(duration),
+            "size": "720P",
+            "aspect_ratio": ratio,
+            "n": 1
+        }
+
+        if image_file:
+            encoded = base64.b64encode(
+                image_file.getvalue()
+            ).decode("utf-8")
+
+            payload["mode"] = "img2video"
+            payload["first_frame"] = (
+                f"data:{image_file.type};base64,{encoded}"
+            )
 
         try:
+            with st.spinner("Submitting your video request..."):
+                response = requests.post(
+                    f"{API}/v1/videos",
+                    headers=headers,
+                    json=payload,
+                    timeout=120
+                )
 
-            with tempfile.TemporaryDirectory() as temp_dir:
+            if response.status_code not in (200, 201, 202):
+                st.error(f"Agnes error: {response.text[:1000]}")
+                st.stop()
 
-                image_path = None
+            data = response.json()
+            video_id = data.get("video_id")
 
-                if characters:
+            if not video_id:
+                st.error(f"Video ID missing: {data}")
+                st.stop()
 
-                    image_path = os.path.join(
-                        temp_dir,
-                        "character.png"
+            st.success("Video request submitted!")
+
+            progress = st.progress(0)
+            message = st.empty()
+
+            video_url = None
+
+            for attempt in range(120):
+
+                result = requests.get(
+                    f"{API}/agnesapi",
+                    params={
+                        "video_id": video_id,
+                        "model_name": "agnes-video-2.5-flash"
+                    },
+                    headers=headers,
+                    timeout=60
+                )
+
+                if result.status_code != 200:
+                    message.warning("Checking video status...")
+                    time.sleep(10)
+                    continue
+
+                status_data = result.json()
+                status = status_data.get("status", "").lower()
+
+                if status == "completed":
+                    video_url = status_data.get("url")
+                    break
+
+                if status == "failed":
+                    st.error(
+                        f"Generation failed: "
+                        f"{status_data.get('error', status_data)}"
                     )
+                    st.stop()
 
-                    with open(image_path, "wb") as f:
-                        f.write(characters.getvalue())
-
-                height, width = sizes[video_format]
-
-                clip_duration = 2.0
-
-                total_clips = math.ceil(
-                    duration / clip_duration
+                message.info(
+                    f"Generating your movie... {status}"
                 )
 
-                actual_clip_duration = (
-                    duration / total_clips
+                progress.progress(
+                    min((attempt + 1) / 120, 0.95)
                 )
 
-                st.info(
-                    f"Your {duration}-second project "
-                    f"requires {total_clips} video clips."
+                time.sleep(10)
+
+            if video_url:
+                video_response = requests.get(
+                    video_url,
+                    timeout=180
+                )
+                video_response.raise_for_status()
+
+                video_bytes = video_response.content
+
+                progress.progress(1.0)
+                st.success("Your movie is ready!")
+
+                st.video(video_bytes)
+
+                st.download_button(
+                    "⬇️ DOWNLOAD MY MOVIE",
+                    video_bytes,
+                    file_name="BUGALEE_movie.mp4",
+                    mime="video/mp4"
                 )
 
-                progress = st.progress(0)
-
-                clip_paths = []
-
-                client = get_client()
-
-                for i in range(total_clips):
-
-                    prompt = f"""
-                    Create a cinematic movie scene.
-
-                    MOVIE STYLE: {movie_style}
-
-                    MOVIE GENRE: {genre}
-
-                    COMPLETE MOVIE STORY:
-                    {story}
-
-                    SCENE NUMBER: {i + 1} of {total_clips}
-
-                    Show the next moment in the story.
-                    Maintain the same main character appearance,
-                    face, clothing and identity.
-
-                    Make the scene visually engaging.
-                    Use realistic movements and professional
-                    cinematography.
-
-                    For action scenes, use cinematic action
-                    without graphic injuries or gore.
-
-                    No subtitles, no captions, no watermarks.
-                    """
-
-                    with st.spinner(
-                        f"Generating scene {i + 1} of {total_clips}..."
-                    ):
-
-                        result = client.predict(
-                            prompt,
-                            handle_file(image_path)
-                            if image_path else None,
-                            height,
-                            width,
-                            float(actual_clip_duration),
-                            42,
-                            "conv",
-                            False,
-                            True,
-                            False,
-                            api_name="/run"
-                        )
-
-                    video_file = result[0]
-
-                    if not isinstance(video_file, str):
-                        raise Exception(
-                            "Unexpected video result."
-                        )
-
-                    if not os.path.exists(video_file):
-                        raise Exception(
-                            "Generated video file not found."
-                        )
-
-                    clip_path = os.path.join(
-                        temp_dir,
-                        f"clip_{i:03d}.mp4"
-                    )
-
-                    with open(video_file, "rb") as source:
-                        with open(clip_path, "wb") as target:
-                            target.write(source.read())
-
-                    clip_paths.append(clip_path)
-
-                    progress.progress(
-                        (i + 1) / total_clips
-                    )
-
-                concat_file = os.path.join(
-                    temp_dir,
-                    "clips.txt"
+            else:
+                st.warning(
+                    "Video is still processing. Please try again later."
                 )
 
-                with open(concat_file, "w") as f:
-
-                    for clip in clip_paths:
-
-                        safe_path = clip.replace("\\", "/")
-
-                        f.write(
-                            f"file '{safe_path}'\n"
-                        )
-
-                output_video = os.path.join(
-                    temp_dir,
-                    "BUGALEE_MOVIE.mp4"
-                )
-
-                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-
-                with st.spinner(
-                    "Joining all scenes into one movie..."
-                ):
-
-                    subprocess.run(
-                        [
-                            ffmpeg,
-                            "-y",
-                            "-f", "concat",
-                            "-safe", "0",
-                            "-i", concat_file,
-                            "-c:v", "libx264",
-                            "-preset", "veryfast",
-                            "-crf", "23",
-                            "-c:a", "aac",
-                            "-movflags", "+faststart",
-                            output_video
-                        ],
-                        check=True,
-                        capture_output=True,
-                        text=True
-                    )
-
-                with open(output_video, "rb") as f:
-                    final_video = f.read()
-
-            st.success("🎉 YOUR MOVIE IS READY!")
-
-            st.video(final_video)
-
-            st.download_button(
-                "⬇️ DOWNLOAD MY MOVIE",
-                data=final_video,
-                file_name="BUGALEE_MOVIE.mp4",
-                mime="video/mp4",
-                use_container_width=True
-            )
-
-        except Exception as e:
-
-            st.error(
-                f"Movie generation failed: {e}"
-            )
-
-st.divider()
-
-st.caption("© BUGALEE TV | BUGALEE AI STUDIO")
+        except Exception as error:
+            st.error(f"Error: {error}")
